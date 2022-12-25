@@ -6,10 +6,7 @@ class Analyzer
 {
     public IEnumerable<Problem> Analyze(Program program)
     {
-		var ctx = new FunctionContext(program)
-		{
-			Problems = new List<Problem>(),
-		};
+		var ctx = new FunctionContext(program, new List<Problem>());
         AnalyzeIfNeeded(ctx);
 
 		foreach (var (varName, contract) in ctx.VariableContracts)
@@ -54,12 +51,27 @@ class Analyzer
 		// TODO: how is about recursion?
 		ctx.IsAnalyzed = true;
 
+		// Here we fix visible scope. Since we copy dictionary there,
+		// it is supposed that local functions do not nest much.
+		// TODO: replace with immutable dictionary?
+		ctx.Functions = new(ctx.Functions);
+
+		foreach (var statement in ctx.Statements)
+		{
+			if (statement is FunctionDeclaration fd)
+			{
+				// Here we do not analyze any functions but just save them
+				// to be lazily analyzed in case it will be called somewhere;
+				// it also allows to call function before they are actually declared.
+				TryDeclareFunction(ctx, fd);
+			}
+		}
+
 		foreach (var statement in ctx.Statements)
 		{
 			switch (statement)
 			{
-                case FunctionDeclaration fd:
-                    TryDeclareFunction(ctx, fd);
+                case FunctionDeclaration:
                     break;
 
                 case VariableDeclaration vd:
@@ -121,7 +133,7 @@ class Analyzer
 			{
 				if (
 					invocation.IsConditional
-					|| contract == VariableContract.ExternallyDeclaredLocallyAssigned
+					|| contract == VariableContract.ExternallyDeclared
 				)
 				{
 					CheckVariableDeclared(ctx, varName);
@@ -231,7 +243,7 @@ class Analyzer
         }
         else
         {
-            ctx.Functions = ctx.Functions.Add(
+            ctx.Functions.Add(
 				declaration.FunctionName,
 				new FunctionContext(declaration, ctx)
 			);
@@ -244,16 +256,18 @@ class Analyzer
 
     private class FunctionContext
 	{
-        public FunctionContext(IEnumerable<IStatement> statements)
+        public FunctionContext(IEnumerable<IStatement> statements, List<Problem> problems)
         {
 			Statements = statements;
-			Functions = ImmutableDictionary.Create<string, FunctionContext>();
+			Problems = problems;
+			Functions = new();
 			VariableContracts = ImmutableDictionary.Create<string, ContextualContract>();
         }
 
         public FunctionContext(FunctionDeclaration fd, FunctionContext ctx)
         {
 			Statements = fd.Body;
+			Problems = ctx.Problems;
 			Functions = ctx.Functions;
 			VariableContracts = ctx.VariableContracts;
         }
@@ -261,11 +275,11 @@ class Analyzer
 		public bool IsAnalyzed { get; set; }
 
   		public IEnumerable<IStatement> Statements { get; }
-		
-		public ImmutableDictionary<string, FunctionContext> Functions { get; set; }
 
-		public ICollection<Problem> Problems { get; init; }
-
+		public ICollection<Problem> Problems { get; }
+	
+		public Dictionary<string, FunctionContext> Functions { get; set; }
+	
 		public ImmutableDictionary<string, ContextualContract> VariableContracts { get; set; }
 
 		public bool IsSymbolDeclared(string name)
@@ -309,12 +323,12 @@ class Analyzer
 		ExternallyDeclaredLocallyAssigned,
 
 		/// <summary>
-		/// Either function or uninitialized variable is declared locally.
+		/// Uninitialized variable is declared locally.
 		/// </summary>
 		LocallyDeclared,
 
 		/// <summary>
-		/// Variable is declared and assigned locally.
+		/// Either function or variable is declared and assigned locally.
 		/// </summary>
 		Local,
 	}

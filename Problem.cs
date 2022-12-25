@@ -1,4 +1,7 @@
-﻿public record Problem(string Message, string Variable)
+﻿// TODO:
+// 1. add variable-length symbols list and support string.Format'ting messages with them?
+// 2. add backling to underlying problematic statement?
+public record Problem(string Message, string SymbolName)
 {
     public const string CAN_NOT_ASSIGN_TO_FUNCTION = "Can not assign value to function";
 
