@@ -219,7 +219,7 @@ class Analyzer
         if (ctx.IsSymbolDeclared(declaration.VariableName))
         {
             ctx.Problems.Add(new Problem(
-                Problem.SYMBOL_NAME_ALREADY_EXISTS,
+                Problem.ALREADY_DECLARED,
                 declaration.VariableName
             ));
         }
@@ -237,7 +237,7 @@ class Analyzer
         if (ctx.IsSymbolDeclared(declaration.FunctionName))
         {
             ctx.Problems.Add(new Problem(
-                Problem.SYMBOL_NAME_ALREADY_EXISTS,
+                Problem.ALREADY_DECLARED,
                 declaration.FunctionName
             ));
         }
