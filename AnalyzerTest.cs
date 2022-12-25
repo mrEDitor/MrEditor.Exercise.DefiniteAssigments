@@ -115,6 +115,32 @@ namespace MrEditor.Exercise.DefiniteAssigments
             Assert.Empty(_analyzer.Analyze(program));
         }
 
+        [Fact]
+        public void TestNestedFunction()
+        {
+            var program = new Program()
+            {
+                /*
+                 *  Bar();
+                 *
+                 *  func Bar() {
+                 *    Foo();
+                 *    func Foo() {}
+                 *  }
+                 */
+                new Invocation("Bar", isConditional: false),
+                new FunctionDeclaration("Bar")
+                {
+                    Body =
+                    {
+                        new Invocation("Foo", isConditional: false),
+                        new FunctionDeclaration("Foo")
+                    }
+                },
+            };
+            Assert.Empty(_analyzer.Analyze(program));
+        }
+
         #endregion
 
         #region Incorrect samples
@@ -232,35 +258,6 @@ namespace MrEditor.Exercise.DefiniteAssigments
             );
         }
 
-        [Fact]
-        public void TestNestedFunction()
-        {
-            var program = new Program()
-            {
-                /*
-                 *  Bar();
-                 *
-                 *  func Bar() {
-                 *    Foo();
-                 *    func Foo() {}
-                 *  }
-                 */
-                new Invocation("Bar", isConditional: false),
-                new FunctionDeclaration("Bar")
-                {
-                    Body =
-                    {
-                        new Invocation("Foo", isConditional: false),
-                        new FunctionDeclaration("Foo")
-                    }
-                },
-            };
-            Assert.Equal(
-                new[] { new Problem(Problem.NESTED_FUNCTION, "Foo") },
-                _analyzer.Analyze(program)
-            );
-        }
-
         // TODO: if we allow nested functions, seems like we should also deny Bar{Bar} case.
         [Fact]
         public void TestHidenByNestedFunction()
@@ -271,8 +268,8 @@ namespace MrEditor.Exercise.DefiniteAssigments
                  *  Bar();
                  *
                  *  func Bar() {
-                 *    Foo();
-                 *    func Foo() {}
+                 *    Bar();
+                 *    func Bar() {}
                  *  }
                  */
                 new Invocation("Bar", isConditional: false),
@@ -286,11 +283,7 @@ namespace MrEditor.Exercise.DefiniteAssigments
                 },
             };
             Assert.Equal(
-                new[]
-                {
-                    new Problem(Problem.NESTED_FUNCTION, "Bar"),
-                    new Problem(Problem.ALREADY_DECLARED, "Bar"),
-                },
+                new[] { new Problem(Problem.ALREADY_DECLARED, "Bar") },
                 _analyzer.Analyze(program)
             );
         }

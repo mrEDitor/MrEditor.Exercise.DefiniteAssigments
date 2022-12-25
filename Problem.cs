@@ -7,8 +7,6 @@ public record Problem(string Message, string SymbolName)
 
     public const string CAN_NOT_ASSIGN_TO_FUNCTION = "Can not assign value to function";
 
-    public const string NESTED_FUNCTION = "Nested function not supported";
-
     public const string UNKNOWN_FUNCTION = "Unknown function called";
 
     public const string USED_THEN_DECLARED = "Variable can not be declared since is was used earlier and expected to be captured from external context";

@@ -7,7 +7,7 @@ class Analyzer
     public IEnumerable<Problem> Analyze(Program program)
     {
 		var ctx = new FunctionContext(program, new List<Problem>());
-        AnalyzeIfNeeded(ctx, isRoot: true);
+        AnalyzeIfNeeded(ctx);
 
 		foreach (var (varName, contract) in ctx.VariableContracts)
 		{
@@ -41,7 +41,7 @@ class Analyzer
         return ctx.Problems;
     }
     
-    private static void AnalyzeIfNeeded(FunctionContext ctx, bool isRoot)
+    private static void AnalyzeIfNeeded(FunctionContext ctx)
     {
 		if (ctx.IsAnalyzed)
 		{
@@ -50,22 +50,14 @@ class Analyzer
 
 		ctx.IsAnalyzed = true;
 
-		// Here we can fix visible scope if we allow nested functions.
-		// ctx.Functions = new(ctx.Functions);
+		// Dictionary may be replaced with immutable one
+		// to optimize for nested functions.
+		ctx.Functions = new(ctx.Functions);
 
 		foreach (var statement in ctx.Statements)
 		{
 			if (statement is FunctionDeclaration fd)
 			{
-				// Here we deny nested functions; it may be easily removed, though.
-				if (!isRoot)
-				{
-					ctx.Problems.Add(new Problem(
-						Problem.NESTED_FUNCTION,
-						fd.FunctionName
-					));
-				}
-
 				// Here we do not analyze any functions but just save them
 				// to be lazily analyzed in case it will be called somewhere;
 				// it also allows to call function before they are actually declared.
@@ -124,7 +116,7 @@ class Analyzer
 			return;
 		}
 
-		AnalyzeIfNeeded(funcCtx, isRoot: false);
+		AnalyzeIfNeeded(funcCtx);
 
 		foreach (var (varName, contract) in funcCtx.VariableContracts)
 		{
