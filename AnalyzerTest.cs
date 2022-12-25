@@ -129,9 +129,9 @@ namespace MrEditor.Exercise.DefiniteAssigments
                  */
                 new AssignVariable("foo"),
             };
-            Assert.Single(
-                _analyzer.Analyze(program),
-                new Problem(Problem.VARIABLE_NOT_DECLARED, "foo")
+            Assert.Equal(
+                new[] { new Problem(Problem.VARIABLE_NOT_DECLARED, "foo") },
+                _analyzer.Analyze(program)
             );
         }
 
@@ -145,9 +145,9 @@ namespace MrEditor.Exercise.DefiniteAssigments
                  */
                 new PrintVariable("foo"),
             };
-            Assert.Single(
-                _analyzer.Analyze(program),
-                new Problem(Problem.VARIABLE_NOT_DECLARED, "foo")
+            Assert.Equal(
+                new[] { new Problem(Problem.VARIABLE_NOT_DECLARED, "foo") },
+                _analyzer.Analyze(program)
             );
         }
 
@@ -163,9 +163,9 @@ namespace MrEditor.Exercise.DefiniteAssigments
                 new VariableDeclaration("foo"),
                 new PrintVariable("foo"),
             };
-            Assert.Single(
-                _analyzer.Analyze(program),
-                new Problem(Problem.VARIABLE_NOT_ASSIGNED, "foo")
+            Assert.Equal(
+                new[] { new Problem(Problem.VARIABLE_NOT_ASSIGNED, "foo") },
+                _analyzer.Analyze(program)
             );
         }
 
@@ -194,42 +194,13 @@ namespace MrEditor.Exercise.DefiniteAssigments
                     }
                 },
             };
-            Assert.Single(
+            Assert.Equal(
                 new[] { new Problem(Problem.VARIABLE_NOT_ASSIGNED, "foo") },
                 _analyzer.Analyze(program)
             );
         }
 
-        [Fact]
-        public void TestHidenByNestedFunction()
-        {
-            var program = new Program()
-            {
-                /*
-                 *  Bar();
-                 *
-                 *  func Bar() {
-                 *    Bar();
-                 *    func Bar() {}
-                 *  }
-                 */
-                new Invocation("Bar", isConditional: false),
-                new FunctionDeclaration("Bar")
-                {
-                    Body =
-                    {
-                        new Invocation("Bar", isConditional: false),
-                        new FunctionDeclaration("Bar")
-                    }
-                },
-            };
-            Assert.Single(
-                new[] { new Problem(Problem.ALREADY_DECLARED, "Bar") },
-                _analyzer.Analyze(program)
-            );
-        }
-
-        // TODO: tricky one, should it be a problem?
+        // TODO: tricky one, should it be a problem at all?
         [Fact]
         public void TestDeclareCapturedFirst()
         {
@@ -255,36 +226,99 @@ namespace MrEditor.Exercise.DefiniteAssigments
                     }
                 },
             };
-            Assert.Single(
-                new[] { new Problem(Problem.VARIABLE_NOT_DECLARED, "foo") },
+            Assert.Equal(
+                new[] { new Problem(Problem.USED_THEN_DECLARED, "foo") },
+                _analyzer.Analyze(program)
+            );
+        }
+
+        [Fact]
+        public void TestNestedFunction()
+        {
+            var program = new Program()
+            {
+                /*
+                 *  Bar();
+                 *
+                 *  func Bar() {
+                 *    Foo();
+                 *    func Foo() {}
+                 *  }
+                 */
+                new Invocation("Bar", isConditional: false),
+                new FunctionDeclaration("Bar")
+                {
+                    Body =
+                    {
+                        new Invocation("Foo", isConditional: false),
+                        new FunctionDeclaration("Foo")
+                    }
+                },
+            };
+            Assert.Equal(
+                new[] { new Problem(Problem.NESTED_FUNCTION, "Foo") },
+                _analyzer.Analyze(program)
+            );
+        }
+
+        // TODO: if we allow nested functions, seems like we should also deny Bar{Bar} case.
+        [Fact]
+        public void TestHidenByNestedFunction()
+        {
+            var program = new Program()
+            {
+                /*
+                 *  Bar();
+                 *
+                 *  func Bar() {
+                 *    Foo();
+                 *    func Foo() {}
+                 *  }
+                 */
+                new Invocation("Bar", isConditional: false),
+                new FunctionDeclaration("Bar")
+                {
+                    Body =
+                    {
+                        new Invocation("Bar", isConditional: false),
+                        new FunctionDeclaration("Bar")
+                    }
+                },
+            };
+            Assert.Equal(
+                new[]
+                {
+                    new Problem(Problem.NESTED_FUNCTION, "Bar"),
+                    new Problem(Problem.ALREADY_DECLARED, "Bar"),
+                },
                 _analyzer.Analyze(program)
             );
         }
 
         #endregion
 
-        // TODO: there are some tricky cases with not-called nested
+        // TODO: there are some tricky cases with nested, especially not-called ones
         [Theory]
-        [InlineData("a", "b", "c", "d", "i", "i", 1)] // none, success test
-        [InlineData("a", "foo", "foo", "d", "i")] // var+var
-        [InlineData("foo", "foo", "c", "d", "i")] // func+var
-        [InlineData("a", "b", "foo", "foo", "i")] // var+func
-        [InlineData("foo", "b", "c", "foo", "i")] // func+func
-        [InlineData("foo", "b", "c", "d", "foo", "foo")] // func+nested (called)
-        [InlineData("foo", "b", "c", "d", "foo", "b", 1)] // func+nested (not called => no problem)
-        [InlineData("a", "b", "c", "foo", "foo", "foo")] // func+it's nested (called => no problem)
-        [InlineData("a", "b", "c", "foo", "foo", "b", 1)] // func+it's nested (not called)
-        [InlineData("a", "b", "foo", "d", "foo")] // var+nested
-        [InlineData("foo", "foo", "foo", "foo", "i", "i", 4)] // many similar declarations (nested not called)
-        [InlineData("foo", "foo", "foo", "foo", "foo", "foo", 5)] // many similar declarations (nested called)
+        [InlineData("a", "b", "c", "d", 1)] // none, success test
+        [InlineData("a", "foo", "foo", "d")] // var+var
+        [InlineData("foo", "foo", "c", "d")] // func+var
+        [InlineData("a", "b", "foo", "foo")] // var+func
+        [InlineData("foo", "b", "c", "foo")] // func+func
+        // [InlineData("foo", "b", "c", "d", 2, "foo", "foo")] // func+nested (called)
+        // [InlineData("foo", "b", "c", "d", 1, "foo", "b")] // func+nested (not called => no problem)
+        // [InlineData("a", "b", "c", "foo", 2, "foo", "foo")] // func+it's nested (called => no problem)
+        // [InlineData("a", "b", "c", "foo", 1, "foo", "b")] // func+it's nested (not called)
+        // [InlineData("a", "b", "foo", "d", "foo")] // var+nested
+        // [InlineData("foo", "foo", "foo", "foo", "i", "i", 4)] // many similar declarations (nested not called)
+        // [InlineData("foo", "foo", "foo", "foo", "foo", "foo", 5)] // many similar declarations (nested called)
         public void TestAlreadyDeclared(
             string a,
             string b,
             string c,
             string d,
-            string h,
-            string i = "i",
             int fooCount = 2
+            // string h = "i",
+            // string i = "i"
         )
         {
             var program = new Program
@@ -299,13 +333,13 @@ namespace MrEditor.Exercise.DefiniteAssigments
                 new VariableDeclaration(b),
                 new VariableDeclaration(c),
                 new FunctionDeclaration(d)
-                {
-                    Body =
-                    {
-                        new FunctionDeclaration(h),
-                        new Invocation(i, isConditional: true),
-                    },
-                },
+                // {
+                //     Body =
+                //     {
+                //         new FunctionDeclaration(h),
+                //         new Invocation(i, isConditional: true),
+                //     },
+                // },
             };
 
             var problems = _analyzer.Analyze(program).ToList();

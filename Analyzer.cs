@@ -7,7 +7,7 @@ class Analyzer
     public IEnumerable<Problem> Analyze(Program program)
     {
 		var ctx = new FunctionContext(program, new List<Problem>());
-        AnalyzeIfNeeded(ctx);
+        AnalyzeIfNeeded(ctx, isRoot: true);
 
 		foreach (var (varName, contract) in ctx.VariableContracts)
 		{
@@ -24,7 +24,7 @@ class Analyzer
 			}
 			else if (contract == VariableContract.LocallyDeclared)
 			{
-				// unused declaration, huh?
+				// unused declaration, grey it out?
 			}
 			else if (contract == VariableContract.Local)
 			{
@@ -41,25 +41,31 @@ class Analyzer
         return ctx.Problems;
     }
     
-    private static void AnalyzeIfNeeded(FunctionContext ctx)
+    private static void AnalyzeIfNeeded(FunctionContext ctx, bool isRoot)
     {
 		if (ctx.IsAnalyzed)
 		{
 			return;
 		}
 
-		// TODO: how is about recursion?
 		ctx.IsAnalyzed = true;
 
-		// Here we fix visible scope. Since we copy dictionary there,
-		// it is supposed that local functions do not nest much.
-		// TODO: replace with immutable dictionary?
-		ctx.Functions = new(ctx.Functions);
+		// Here we can fix visible scope if we allow nested functions.
+		// ctx.Functions = new(ctx.Functions);
 
 		foreach (var statement in ctx.Statements)
 		{
 			if (statement is FunctionDeclaration fd)
 			{
+				// Here we deny nested functions; it may be easily removed, though.
+				if (!isRoot)
+				{
+					ctx.Problems.Add(new Problem(
+						Problem.NESTED_FUNCTION,
+						fd.FunctionName
+					));
+				}
+
 				// Here we do not analyze any functions but just save them
 				// to be lazily analyzed in case it will be called somewhere;
 				// it also allows to call function before they are actually declared.
@@ -118,7 +124,7 @@ class Analyzer
 			return;
 		}
 
-		AnalyzeIfNeeded(funcCtx);
+		AnalyzeIfNeeded(funcCtx, isRoot: false);
 
 		foreach (var (varName, contract) in funcCtx.VariableContracts)
 		{
@@ -145,7 +151,7 @@ class Analyzer
 			}
 			else if (contract == VariableContract.LocallyDeclared)
 			{
-				// unused declaration, huh?
+				// unused declaration, grey it out?
 			}
 			else if (contract == VariableContract.Local)
 			{
@@ -216,25 +222,36 @@ class Analyzer
 
 	private static void TryDeclareVariable(FunctionContext ctx, VariableDeclaration declaration)
     {
-        if (ctx.IsSymbolDeclared(declaration.VariableName))
+        if (ctx.IsSymbolDeclared(declaration.VariableName, out var contract))
         {
-            ctx.Problems.Add(new Problem(
-                Problem.ALREADY_DECLARED,
-                declaration.VariableName
-            ));
+			if (contract == VariableContract.ExternallyDeclaredLocallyAssigned)
+			{
+				ctx.Problems.Add(new Problem(
+					Problem.USED_THEN_DECLARED,
+					declaration.VariableName
+				));
+			}
+			else
+			{
+				ctx.Problems.Add(new Problem(
+					Problem.ALREADY_DECLARED,
+					declaration.VariableName
+				));
+				return;
+			}
         }
-        else
-        {
-            ctx.VariableContracts = ctx.VariableContracts.Add(
-                declaration.VariableName,
-                VariableContract.LocallyDeclared
-            );
-        }
+
+		// It could be VariableContract.Local after Problem.USED_THEN_DECLARED as well,
+		// but we assume the declaration and further uses are not the same variable.
+		ctx.VariableContracts = ctx.VariableContracts.SetItem(
+			declaration.VariableName,
+			VariableContract.LocallyDeclared
+		);
     }
 
     private static void TryDeclareFunction(FunctionContext ctx, FunctionDeclaration declaration)
     {
-        if (ctx.IsSymbolDeclared(declaration.FunctionName))
+        if (ctx.IsSymbolDeclared(declaration.FunctionName, out _))
         {
             ctx.Problems.Add(new Problem(
                 Problem.ALREADY_DECLARED,
@@ -282,9 +299,15 @@ class Analyzer
 	
 		public ImmutableDictionary<string, ContextualContract> VariableContracts { get; set; }
 
-		public bool IsSymbolDeclared(string name)
+		public bool IsSymbolDeclared(string name, out ContextualContract contract)
 		{
-			return Functions.ContainsKey(name) || VariableContracts.ContainsKey(name);
+			if (Functions.ContainsKey(name))
+			{
+				contract = VariableContract.Local;
+				return true;
+			}
+
+			return VariableContracts.TryGetValue(name, out contract);
 		}
 	}
 
