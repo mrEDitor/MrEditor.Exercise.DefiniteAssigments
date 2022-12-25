@@ -33,12 +33,12 @@ namespace MrEditor.Exercise.DefiniteAssigments
             var program = new Program
             {
                 /*
-                 *  foo = ...;
+                 *  foo = ...; // not OK, not declared yet
                  */
                 new AssignVariable("foo"),
             };
             Assert.Equal(
-                new [] { new Problem("Unknown variable", "foo") },
+                new [] { new Problem(Problem.VARIABLE_NOT_DECLARED, "foo") },
                 _analyzer.Analyze(program)
             );
         }
@@ -49,15 +49,16 @@ namespace MrEditor.Exercise.DefiniteAssigments
             var program = new Program
             {
                 /*
-                 *  print(foo);
+                 *  print(foo); // not OK, not declared yet
                  */
                 new PrintVariable("foo"),
             };
             Assert.Equal(
-                new [] { new Problem("Unknown variable", "foo") },
+                new [] { new Problem(Problem.VARIABLE_NOT_DECLARED, "foo") },
                 _analyzer.Analyze(program)
             );
         }
+
         [Fact]
         public void TestUnassignedUnknown()
         {
@@ -65,13 +66,31 @@ namespace MrEditor.Exercise.DefiniteAssigments
             {
                 /*
                  *  var foo;
-                 *  print(foo);
+                 *  print(foo); // not OK, not assigned yet
                  */
                 new VariableDeclaration("foo"),
                 new PrintVariable("foo"),
             };
             Assert.Equal(
-                new [] { new Problem("Unassigned variable", "foo") },
+                new [] { new Problem(Problem.VARIABLE_NOT_ASSIGNED, "foo") },
+                _analyzer.Analyze(program)
+            );
+        }
+
+        [Fact]
+        public void TestAlreadyDeclared()
+        {
+            var program = new Program
+            {
+                /*
+                 *  var foo;
+                 *  foo() {} // not OK, already declared
+                 */
+                new VariableDeclaration("foo"),
+                new FunctionDeclaration("foo"),
+            };
+            Assert.Equal(
+                new [] { new Problem(Problem.SYMBOL_NAME_ALREADY_EXISTS, "foo") },
                 _analyzer.Analyze(program)
             );
         }
