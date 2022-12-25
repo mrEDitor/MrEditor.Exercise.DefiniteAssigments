@@ -1,7 +1,11 @@
-﻿class Analyzer
+﻿using System.Collections.Generic;
+
+class Analyzer
 {
-    public /* ... */ Analyze(Program program)
+    public IEnumerable<Problem> Analyze(Program program)
     {
-        /* ... */
+        var problems = new List<Problem>();
+
+        return problems;
     }
 }
