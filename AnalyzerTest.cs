@@ -10,6 +10,12 @@ namespace MrEditor.Exercise.DefiniteAssigments
         #region correct samples
 
         [Fact]
+        public void Test1000()
+        {
+            new AnalyzerBenchmark.Benchmarks().DoBenchmark(2_000);
+        }
+
+        [Fact]
         public void TestSimpleVariableUsage()
         {
             Assert.Empty(_analyzer.Analyze(CorrectExamples.SimpleVariableUsage));

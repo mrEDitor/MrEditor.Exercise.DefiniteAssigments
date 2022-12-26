@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 
 class Analyzer
 {
@@ -10,7 +11,7 @@ class Analyzer
 		var ctx = new FunctionContext(program, new List<Problem>());
         AnalyzeIfNeeded(ctx);
 
-		foreach (var (varName, contract) in ctx.VariableContracts)
+		foreach (var (varName, contract) in ctx.LocalVariableContracts)
 		{
 			if (
 				contract == VariableContract.External
@@ -126,7 +127,7 @@ class Analyzer
 
 		AnalyzeIfNeeded(funcCtx);
 
-		foreach (var (varName, contract) in funcCtx.VariableContracts)
+		foreach (var (varName, contract) in funcCtx.LocalVariableContracts)
 		{
 			if (contract == VariableContract.External)
 			{
@@ -168,15 +169,12 @@ class Analyzer
 
     private static void CheckVariableAssigned(FunctionContext ctx, string name)
     {
-        if (
-			!ctx.VariableContracts.TryGetValue(name, out var pvc)
+		if (
+			!ctx.TryGetVariableContract(name, out var pvc)
 			|| pvc == VariableContract.ExternallyDeclared
 		)
         {
-            ctx.VariableContracts = ctx.VariableContracts.SetItem(
-                name,
-                VariableContract.External
-            );
+            ctx.LocalVariableContracts[name] = VariableContract.External;
         }
         else if (pvc == VariableContract.LocallyDeclared)
         {
@@ -189,40 +187,33 @@ class Analyzer
 
     private static void CheckVariableDeclared(FunctionContext ctx, string name)
     {
-        if (!ctx.VariableContracts.TryGetValue(name, out var pvc))
+        if (!ctx.TryGetVariableContract(name, out var pvc))
         {
-            ctx.VariableContracts = ctx.VariableContracts.SetItem(
-                name,
-                VariableContract.ExternallyDeclared
-            );
+            ctx.LocalVariableContracts[name] = VariableContract.ExternallyDeclared;
         }
     }
 
     private static void TryAssignVariable(FunctionContext ctx, string name)
     {
         if (
-            !ctx.VariableContracts.TryGetValue(name, out var avc)
+            !ctx.TryGetVariableContract(name, out var avc)
             || avc == VariableContract.External
             || avc == VariableContract.ExternallyDeclared
         )
         {
-            ctx.VariableContracts = ctx.VariableContracts.SetItem(
-                name,
-                VariableContract.ExternallyDeclaredLocallyAssigned
-            );
+            ctx.LocalVariableContracts[name] =
+				VariableContract.ExternallyDeclaredLocallyAssigned;
         }
 		else if (avc == VariableContract.LocallyDeclared)
 		{
-			ctx.VariableContracts = ctx.VariableContracts.SetItem(
-                name,
-                VariableContract.Local
-            );
+			ctx.LocalVariableContracts[name] =
+				VariableContract.Local;
 		}
     }
 
 	private static void TryDeclareVariable(FunctionContext ctx, VariableDeclaration declaration)
     {
-        if (ctx.IsSymbolDeclared(declaration.VariableName, out var contract))
+		if (ctx.IsSymbolDeclared(declaration.VariableName, out var contract))
         {
 			if (contract == VariableContract.ExternallyDeclaredLocallyAssigned)
 			{
@@ -243,10 +234,8 @@ class Analyzer
 
 		// It could be VariableContract.Local after Problem.USED_THEN_DECLARED as well,
 		// but we assume the declaration and further uses are not the same variable.
-		ctx.VariableContracts = ctx.VariableContracts.SetItem(
-			declaration.VariableName,
-			VariableContract.LocallyDeclared
-		);
+		ctx.LocalVariableContracts[declaration.VariableName] =
+			VariableContract.LocallyDeclared;
     }
 
     private static bool TryDeclareFunction(
@@ -271,10 +260,8 @@ class Analyzer
 				declaration.FunctionName,
 				functionCtx
 			);
-            ctx.VariableContracts = ctx.VariableContracts.Add(
-                declaration.FunctionName,
-                VariableContract.Local
-            );
+            ctx.LocalVariableContracts[declaration.FunctionName] =
+                VariableContract.Local;
 			return true;
         }
     }
@@ -286,7 +273,8 @@ class Analyzer
 			Statements = statements;
 			Problems = problems;
 			Functions = ImmutableDictionary.Create<string, FunctionContext>();
-			VariableContracts = ImmutableDictionary.Create<string, ContextualContract>();
+			LocalVariableContracts = new();
+			ExternalVariableContracts = Enumerable.Empty<Dictionary<string, ContextualContract>>();
         }
 
         public FunctionContext(FunctionDeclaration fd, FunctionContext ctx)
@@ -294,7 +282,8 @@ class Analyzer
 			Statements = fd.Body;
 			Problems = ctx.Problems;
 			Functions = ctx.Functions;
-			VariableContracts = ctx.VariableContracts;
+			LocalVariableContracts = new();
+			ExternalVariableContracts = ctx.ExternalVariableContracts.Prepend(ctx.LocalVariableContracts);
         }
 
 		public bool IsAnalyzed { get; set; }
@@ -305,7 +294,36 @@ class Analyzer
 	
 		public ImmutableDictionary<string, FunctionContext> Functions { get; set; }
 	
-		public ImmutableDictionary<string, ContextualContract> VariableContracts { get; set; }
+		private IEnumerable<Dictionary<string, ContextualContract>> ExternalVariableContracts { get; }
+
+        public Dictionary<string, ContextualContract> LocalVariableContracts { get; }
+
+		public bool TryGetVariableContract(
+			string name,
+			[NotNullWhen(true)] out ContextualContract? contract
+		)
+		{
+			if (LocalVariableContracts.TryGetValue(name, out contract))
+			{
+				return true;
+			}
+
+			foreach (var contracts in ExternalVariableContracts)
+			{
+				if (contracts.TryGetValue(name, out contract))
+				{
+					if (contract == VariableContract.LocallyDeclared)
+					{
+						contract = VariableContract.ExternallyDeclared;
+					}
+
+					return true;
+				}
+			}
+
+			contract = null;
+			return false;
+		}
 
 		public bool IsSymbolDeclared(
 			string name,
@@ -318,7 +336,7 @@ class Analyzer
 				return true;
 			}
 
-			return VariableContracts.TryGetValue(name, out contract);
+			return TryGetVariableContract(name, out contract);
 		}
 	}
 

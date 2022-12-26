@@ -11,7 +11,7 @@ namespace MrEditor.Exercise.DefiniteAssigments
         {
             var summary = BenchmarkRunner.Run<Benchmarks>();
             System.Console.WriteLine(summary.ResultsDirectoryPath);
-        }}
+        }
 
         public class Benchmarks
         {
@@ -27,7 +27,13 @@ namespace MrEditor.Exercise.DefiniteAssigments
             [Benchmark]
             public void DoBenchmark5000() => DoBenchmark(5000);
 
-            private void DoBenchmark(int functionsCount)
+            [Benchmark]
+            public void DoBenchmark10000() => DoBenchmark(10000);
+
+            [Benchmark]
+            public void DoBenchmark50000() => DoBenchmark(50000);
+
+            public void DoBenchmark(int functionsCount)
             {
                 var program = new Program()
                 {
@@ -53,3 +59,4 @@ namespace MrEditor.Exercise.DefiniteAssigments
             }
         }
     }
+}
