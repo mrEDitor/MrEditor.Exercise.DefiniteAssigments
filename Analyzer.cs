@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
 
 class Analyzer
 {
@@ -50,10 +51,7 @@ class Analyzer
 
 		ctx.IsAnalyzed = true;
 
-		// Dictionary may be replaced with immutable one
-		// to optimize for nested functions.
-		ctx.Functions = new(ctx.Functions);
-
+		var localFuncs = new List<FunctionContext>();
 		foreach (var statement in ctx.Statements)
 		{
 			if (statement is FunctionDeclaration fd)
@@ -61,8 +59,18 @@ class Analyzer
 				// Here we do not analyze any functions but just save them
 				// to be lazily analyzed in case it will be called somewhere;
 				// it also allows to call function before they are actually declared.
-				TryDeclareFunction(ctx, fd);
+				if (TryDeclareFunction(ctx, fd, out var functionCtx))
+				{
+					localFuncs.Add(functionCtx);
+				}
 			}
+		}
+
+		foreach (var functionCtx in localFuncs)
+		{
+			// Cross-declare all local functions to each other. Now function body
+			// can contain call to not declared function even if it is not local.
+			functionCtx.Functions = ctx.Functions;
 		}
 
 		foreach (var statement in ctx.Statements)
@@ -241,7 +249,11 @@ class Analyzer
 		);
     }
 
-    private static void TryDeclareFunction(FunctionContext ctx, FunctionDeclaration declaration)
+    private static bool TryDeclareFunction(
+		FunctionContext ctx,
+		FunctionDeclaration declaration,
+		[NotNullWhen(true)] out FunctionContext? functionCtx
+	)
     {
         if (ctx.IsSymbolDeclared(declaration.FunctionName, out _))
         {
@@ -249,17 +261,21 @@ class Analyzer
                 Problem.ALREADY_DECLARED,
                 declaration.FunctionName
             ));
+			functionCtx = null;
+			return false;
         }
         else
         {
-            ctx.Functions.Add(
+			functionCtx = new FunctionContext(declaration, ctx);
+            ctx.Functions = ctx.Functions.Add(
 				declaration.FunctionName,
-				new FunctionContext(declaration, ctx)
+				functionCtx
 			);
             ctx.VariableContracts = ctx.VariableContracts.Add(
                 declaration.FunctionName,
                 VariableContract.Local
             );
+			return true;
         }
     }
 
@@ -269,7 +285,7 @@ class Analyzer
         {
 			Statements = statements;
 			Problems = problems;
-			Functions = new();
+			Functions = ImmutableDictionary.Create<string, FunctionContext>();
 			VariableContracts = ImmutableDictionary.Create<string, ContextualContract>();
         }
 
@@ -287,11 +303,14 @@ class Analyzer
 
 		public ICollection<Problem> Problems { get; }
 	
-		public Dictionary<string, FunctionContext> Functions { get; set; }
+		public ImmutableDictionary<string, FunctionContext> Functions { get; set; }
 	
 		public ImmutableDictionary<string, ContextualContract> VariableContracts { get; set; }
 
-		public bool IsSymbolDeclared(string name, out ContextualContract contract)
+		public bool IsSymbolDeclared(
+			string name,
+			[NotNullWhen(true)] out ContextualContract? contract
+		)
 		{
 			if (Functions.ContainsKey(name))
 			{
@@ -303,7 +322,7 @@ class Analyzer
 		}
 	}
 
-	// TODO: here we cane either preserve conract application context (e.g. a statement number)
+	// TODO: here we cane either preserve contract application context (e.g. a statement number)
 	// or speed the things up if drop the class by replacing with VariableContract.
 	private record ContextualContract
 	{

@@ -258,7 +258,6 @@ namespace MrEditor.Exercise.DefiniteAssigments
             );
         }
 
-        // TODO: if we allow nested functions, seems like we should also deny Bar{Bar} case.
         [Fact]
         public void TestHidenByNestedFunction()
         {
