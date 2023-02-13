@@ -103,7 +103,13 @@ class Analyzer
                     break;
 
                 case Invocation fi:
-					CheckInvocation(ctx, fi);
+					CheckInvocation(ctx, fi, out var infinitelyRecursive);
+					if (infinitelyRecursive)
+					{
+						// Other imperative statements will are unreachable, do not analyze them.
+						ctx.InfinitelyRecursive = true;
+						return;
+					}
 					break;
 
 				default:
@@ -114,18 +120,50 @@ class Analyzer
 		}
 	}
 
-    private static void CheckInvocation(FunctionContext ctx, Invocation invocation)
-	{
+    private static void CheckInvocation(
+	    FunctionContext ctx,
+	    Invocation invocation,
+	    out bool infinitelyRecursive
+	)
+    {
 		if (!ctx.Functions.TryGetValue(invocation.FunctionName, out var funcCtx))
 		{
 			ctx.Problems.Add(new Problem(
                 Problem.UNKNOWN_FUNCTION,
                 invocation.FunctionName
             ));
+			infinitelyRecursive = false;
 			return;
 		}
 
 		AnalyzeIfNeeded(funcCtx);
+
+		if (invocation.IsConditional)
+		{
+			infinitelyRecursive = false;
+		}
+		else
+		{
+			ctx.AlwaysInvokes.Add(funcCtx);
+
+			if (ctx == funcCtx)
+			{
+				infinitelyRecursive = true;
+			}
+			else
+			{
+				// Here we collect all unconditional invocations, effectively recursively.
+				// The complexity is O(N^2) in worst case: where N is count of required
+				// invocations and each invoked function somehow calls each of others.
+				// Through such a case sounds really unrealistic
+				foreach (var subInv in funcCtx.AlwaysInvokes)
+				{
+					ctx.AlwaysInvokes.Add(subInv);
+				}
+
+				infinitelyRecursive = funcCtx.InfinitelyRecursive || ctx.AlwaysInvokes.Contains(ctx);
+			}
+		}
 
 		foreach (var (varName, contract) in funcCtx.LocalVariableContracts)
 		{
@@ -273,6 +311,7 @@ class Analyzer
 			Statements = statements;
 			Problems = problems;
 			Functions = ImmutableDictionary.Create<string, FunctionContext>();
+			AlwaysInvokes = new();
 			LocalVariableContracts = new();
 			ExternalVariableContracts = Enumerable.Empty<Dictionary<string, ContextualContract>>();
         }
@@ -282,6 +321,7 @@ class Analyzer
 			Statements = fd.Body;
 			Problems = ctx.Problems;
 			Functions = ctx.Functions;
+			AlwaysInvokes = new();
 			LocalVariableContracts = new();
 			ExternalVariableContracts = ctx.ExternalVariableContracts.Prepend(ctx.LocalVariableContracts);
         }
@@ -290,7 +330,9 @@ class Analyzer
 
   		public IEnumerable<IStatement> Statements { get; }
 
-		public ICollection<Problem> Problems { get; }
+        public ICollection<Problem> Problems { get; }
+
+        public HashSet<FunctionContext> AlwaysInvokes { get; }
 	
 		public ImmutableDictionary<string, FunctionContext> Functions { get; set; }
 	
@@ -298,7 +340,9 @@ class Analyzer
 
         public Dictionary<string, ContextualContract> LocalVariableContracts { get; }
 
-		public bool TryGetVariableContract(
+        public bool InfinitelyRecursive { get; set; }
+
+        public bool TryGetVariableContract(
 			string name,
 			[NotNullWhen(true)] out ContextualContract? contract
 		)
