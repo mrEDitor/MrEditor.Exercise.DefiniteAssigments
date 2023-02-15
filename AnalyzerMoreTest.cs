@@ -38,6 +38,28 @@ namespace MrEditor.Exercise.DefiniteAssigments
         }
 
         [Fact]
+        public void UnreachableVariableHiddenByFunctionName()
+        {
+            // Внутри локальных функций не должно быть деклараций переменных или локальных функций с именами,
+            // совпадающими с именами переменных или функций из внешних контекстов (запрещено "сокрытие имен").
+            var program = new Program
+            {
+                new VariableDeclaration("X"),
+                new FunctionDeclaration("F") // unused function, not analysed
+                {
+                    Body =
+                    {
+                        new FunctionDeclaration("X")
+                    }
+                }, 
+            };
+
+            var errors = _analyzer.Analyze(program);
+            Assert.Empty(errors);
+        }
+
+
+        [Fact]
         public void VariableHiddenByFunctionName()
         {
             // Внутри локальных функций не должно быть деклараций переменных или локальных функций с именами,
@@ -51,7 +73,8 @@ namespace MrEditor.Exercise.DefiniteAssigments
                     {
                         new FunctionDeclaration("X")
                     }
-                }
+                }, 
+                new Invocation("F", true),
             };
 
             var errors = _analyzer.Analyze(program);

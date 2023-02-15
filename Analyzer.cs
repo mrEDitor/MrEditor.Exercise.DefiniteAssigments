@@ -8,7 +8,7 @@ class Analyzer
 {
     public IEnumerable<Problem> Analyze(Program program)
     {
-		var ctx = new FunctionContext(program, new List<Problem>());
+		var ctx = new FunctionContext(program, new HashSet<Problem>());
         AnalyzeIfNeeded(ctx);
 
 		foreach (var (varName, contract) in ctx.LocalVariableContracts)
@@ -306,7 +306,7 @@ class Analyzer
 
     private class FunctionContext
 	{
-        public FunctionContext(IEnumerable<IStatement> statements, List<Problem> problems)
+        public FunctionContext(IEnumerable<IStatement> statements, HashSet<Problem> problems)
         {
 			Statements = statements;
 			Problems = problems;
@@ -330,7 +330,7 @@ class Analyzer
 
   		public IEnumerable<IStatement> Statements { get; }
 
-        public ICollection<Problem> Problems { get; }
+        public HashSet<Problem> Problems { get; }
 
         public HashSet<FunctionContext> AlwaysInvokes { get; }
 	
